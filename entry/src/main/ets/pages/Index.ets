@@ -53,7 +53,7 @@ struct Index {
     Column() {
       if (this.isBlackScreen) {
         // 黑屏背景
-        Text()
+        Column()
           .width('100%')
           .height('100%')
           .backgroundColor(Color.Black)
