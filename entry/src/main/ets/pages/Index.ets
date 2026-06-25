@@ -23,6 +23,14 @@ struct Index {
   // 屏幕尺寸
   private screenWidth: number = 0
   private screenHeight: number = 0
+  // XComponent尺寸（用于坐标转换）
+  private xComponentWidth: number = 0
+  private xComponentHeight: number = 0
+  // 对焦框相关变量
+  @State showFocusBox: boolean = false
+  @State focusBoxX: number = 0
+  @State focusBoxY: number = 0
+  private focusBoxTimer: number = -1
 
   aboutToAppear() {
     // 启动渐变动画
@@ -73,7 +81,7 @@ struct Index {
       const atManager = abilityAccessCtrl.createAtManager()
       const permissions: Permissions[] = ['ohos.permission.CAMERA']
       const result = await atManager.requestPermissionsFromUser(this.context, permissions)
-      
+
       // 检查权限是否授予
       if (result.authResults[0] === 0) {
         console.info('Camera permission granted')
@@ -96,7 +104,7 @@ struct Index {
     }
 
     // 计算屏幕宽高比（使用较大的值除以较小的值）
-    const screenRatio = Math.max(this.screenWidth, this.screenHeight) / 
+    const screenRatio = Math.max(this.screenWidth, this.screenHeight) /
                         Math.min(this.screenWidth, this.screenHeight)
     console.info(`Screen ratio: ${screenRatio}`)
 
@@ -105,7 +113,7 @@ struct Index {
 
     // 遍历所有预览分辨率，找到与屏幕比例最接近的
     for (const profile of previewProfiles) {
-      const profileRatio = Math.max(profile.size.width, profile.size.height) / 
+      const profileRatio = Math.max(profile.size.width, profile.size.height) /
                           Math.min(profile.size.width, profile.size.height)
       const diff = Math.abs(profileRatio - screenRatio)
 
@@ -118,6 +126,61 @@ struct Index {
     }
 
     return bestProfile
+  }
+
+  // 处理点击对焦
+  private async handleFocus(touchX: number, touchY: number): Promise<void> {
+    if (!this.photoSession || !this.xComponentWidth || !this.xComponentHeight) {
+      console.error('PhotoSession or XComponent size not ready')
+      return
+    }
+
+    try {
+      // 检查是否支持自动对焦模式
+      const isFocusModeSupported = this.photoSession.isFocusModeSupported(camera.FocusMode.FOCUS_MODE_AUTO)
+      if (!isFocusModeSupported) {
+        console.warn('FOCUS_MODE_AUTO not supported')
+        return
+      }
+
+      // 设置对焦模式为自动对焦
+      await this.photoSession.setFocusMode(camera.FocusMode.FOCUS_MODE_AUTO)
+
+      // 坐标转换：屏幕坐标 -> 相机归一化坐标
+      // 转换公式：{y/h, 1-x/w}
+      const focusPoint: camera.Point = {
+        x: touchY / this.xComponentHeight,
+        y: 1 - touchX / this.xComponentWidth
+      }
+
+      // 设置对焦点
+      await this.photoSession.setFocusPoint(focusPoint)
+      console.info(`Focus set to point: ${JSON.stringify(focusPoint)}`)
+      
+      // 显示对焦框
+      this.showFocusBoxAt(touchX, touchY)
+    } catch (error) {
+      console.error(`Failed to set focus: ${JSON.stringify(error)}`)
+    }
+  }
+
+  // 显示对焦框
+  private showFocusBoxAt(x: number, y: number): void {
+    // 清除之前的定时器
+    if (this.focusBoxTimer !== -1) {
+      clearTimeout(this.focusBoxTimer)
+    }
+    
+    // 设置对焦框位置并显示
+    this.focusBoxX = x
+    this.focusBoxY = y
+    this.showFocusBox = true
+    
+    // 2秒后自动隐藏对焦框
+    this.focusBoxTimer = setTimeout(() => {
+      this.showFocusBox = false
+      this.focusBoxTimer = -1
+    }, 2000)
   }
 
   // 初始化相机
@@ -262,18 +325,46 @@ struct Index {
     Column() {
       if (this.isBlackScreen) {
         // 相机预览背景
-        XComponent({
-          id: 'cameraPreview',
-          type: XComponentType.SURFACE,
-          controller: this.xComponentController
-        })
-          .width('100%')
-          .height('100%')
-          .onLoad(() => {
-            this.surfaceId = this.xComponentController.getXComponentSurfaceId()
-            // 初始化相机并启动预览
-            this.initCamera()
+        Stack() {
+          XComponent({
+            id: 'cameraPreview',
+            type: XComponentType.SURFACE,
+            controller: this.xComponentController
           })
+            .width('100%')
+            .height('100%')
+            .onLoad(() => {
+              this.surfaceId = this.xComponentController.getXComponentSurfaceId()
+              // 初始化相机并启动预览
+              this.initCamera()
+            })
+            .onAreaChange((oldValue: Area, newValue: Area) => {
+              // 获取XComponent的实际尺寸
+              this.xComponentWidth = newValue.width as number
+              this.xComponentHeight = newValue.height as number
+            })
+            .onTouch((event: TouchEvent) => {
+              // 处理点击对焦
+              if (event.type === TouchType.Down) {
+                const touch = event.touches[0]
+                this.handleFocus(touch.x, touch.y)
+              }
+            })
+          
+          // 对焦框
+          if (this.showFocusBox) {
+            Column()
+              .width(70)
+              .height(70)
+              .border({
+                width: 2,
+                color: Color.White
+              })
+              .position({ x: this.focusBoxX - 35, y: this.focusBoxY - 35 })
+          }
+        }
+        .width('100%')
+        .height('100%')
       } else {
         // 正常界面 - 纯白色背景
         RelativeContainer() {
