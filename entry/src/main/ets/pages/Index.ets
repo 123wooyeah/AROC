@@ -4,6 +4,7 @@ import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 import { window } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit';
+import { router } from '@kit.ArkUI';
 import { CompositionClassifier, COMPOSITION_LABELS, ClassificationResult } from '../model/CompositionClassifier';
 
 @SuppressWarnings({ rules: [SuppressWarningsType.PERMISSION] })
@@ -330,6 +331,22 @@ struct Index {
   // 释放相机资源
   async releaseCamera() {
     try {
+      // 停止定时器
+      if (this.classifyInterval !== -1) {
+        clearInterval(this.classifyInterval)
+        this.classifyInterval = -1
+        console.info('[Composition] 定时器已停止')
+      }
+      
+      // 停止识别状态
+      this.isClassifying = false
+      
+      // 释放ImageReceiver
+      if (this.imageReceiver) {
+        this.imageReceiver.release()
+        this.imageReceiver = null
+      }
+      
       if (this.photoSession) {
         await this.photoSession.stop()
         await this.photoSession.release()
@@ -702,6 +719,20 @@ struct Index {
               .position({ x: this.focusBoxX - 35, y: this.focusBoxY - 35 })
           }
           
+          // 返回按钮
+          Button('返回')
+            .fontSize(14)
+            .fontColor(Color.White)
+            .backgroundColor('#88000000')
+            .borderRadius(20)
+            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+            .position({ x: 16, y: 16 })
+            .onClick(() => {
+              // 释放相机资源
+              this.releaseCamera()
+              this.isBlackScreen = false
+            })
+          
           // 构图识别结果显示
           if (this.currentComposition !== '') {
             Column() {
@@ -720,7 +751,7 @@ struct Index {
             .padding({ left: 16, right: 16, top: 8, bottom: 8 })
             .backgroundColor('#88000000')
             .borderRadius(8)
-            .position({ x: 16, y: 50 })
+            .position({ x: 16, y: 61 })
           }
           
           // 模型运行状态信息面板
@@ -791,7 +822,7 @@ struct Index {
           .padding(10)
           .backgroundColor('#99000000')
           .borderRadius(8)
-          .position({ x: 16, y: 120 })
+          .position({ x: 16, y: 132 })
           .justifyContent(FlexAlign.Start)
           .alignItems(HorizontalAlign.Start)
         }
@@ -825,6 +856,22 @@ struct Index {
               .onClick(() => {
                 // 点击文字后切换到黑屏
                 this.isBlackScreen = true;
+              })
+            
+            // 验证按钮
+            Button('模型验证')
+              .fontSize(14)
+              .backgroundColor('#4CAF50')
+              .alignRules({
+                bottom: { anchor: '__container__', align: VerticalAlign.Bottom },
+                middle: { anchor: '__container__', align: HorizontalAlign.Center }
+              })
+              .margin({ bottom: 100 })
+              .onClick(() => {
+                // 跳转到验证页面
+                router.pushUrl({
+                  url: 'pages/ModelVerifyPage'
+                });
               })
           }
         }

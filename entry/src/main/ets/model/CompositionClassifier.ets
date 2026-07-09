@@ -6,32 +6,14 @@ import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { mindSporeLite } from '@kit.MindSporeLiteKit';
 
-// 24种构图类别
+// 24种构图类别（与训练脚本一致）
 export const COMPOSITION_LABELS: string[] = [
-  '中心构图',
-  '三分法构图',
-  '对称构图',
-  '引导线构图',
-  '框架构图',
-  '对角线构图',
-  '三角形构图',
-  'S形构图',
-  'L形构图',
-  '水平线构图',
-  '垂直线构图',
-  '放射线构图',
-  '重复构图',
-  '对比构图',
-  '留白构图',
-  '填充构图',
-  '黄金分割构图',
-  '黄金螺旋构图',
-  '负空间构图',
-  '深度构图',
-  '前景构图',
-  '背景构图',
-  '色彩构图',
-  '光影构图'
+  'C形曲线', 'O形曲线', 'S形曲线', '三角形',
+  '中心点形', '单点三分', '图案', '垂直三线',
+  '垂直二线', '垂直单边', '垂直均势', '垂直多线',
+  '垂直居中', '多点三角', '多点垂直', '多点对角',
+  '多点水平', '密集', '对角线', '散射',
+  '水平三等分', '水平二等分', '漫射', '透视'
 ];
 
 export interface ClassificationResult {
@@ -253,6 +235,65 @@ export class CompositionClassifier {
     } catch (error) {
       console.error(`[CompositionClassifier] 推理异常: ${JSON.stringify(error)}`);
       return null;
+    }
+  }
+  
+  /**
+   * 获取所有类别的概率
+   */
+  async getAllProbabilities(pixelMap: image.PixelMap): Promise<number[]> {
+    if (!this.isModelLoaded || this.model === null) {
+      console.error('[CompositionClassifier] 模型未加载');
+      return [];
+    }
+    
+    try {
+      // 预处理图像
+      const inputData = await this.preprocessImage(pixelMap);
+      
+      // 获取模型输入
+      const inputs = await this.model.getInputs();
+      if (inputs === null || inputs.length === 0) {
+        return [];
+      }
+      
+      // 设置输入数据
+      const inputTensor = inputs[0];
+      inputTensor.setData(inputData.buffer);
+      
+      // 执行推理
+      const outputs = await this.model.predict(inputs);
+      if (outputs === null || outputs.length === 0) {
+        return [];
+      }
+      
+      // 获取输出数据
+      const outputTensor = outputs[0];
+      let elementsCount = 1;
+      for (const dim of outputTensor.shape) {
+        elementsCount *= dim;
+      }
+      console.info(`[CompositionClassifier] 模型输出维度: ${outputTensor.shape}, 元素数量: ${elementsCount}, 类别数量: ${COMPOSITION_LABELS.length}`);
+      
+      const outputData = new Float32Array(elementsCount);
+      const outputBuffer = outputTensor.getData();
+      const tempArray = new Float32Array(outputBuffer);
+      for (let i = 0; i < elementsCount && i < tempArray.length; i++) {
+        outputData[i] = tempArray[i];
+      }
+      
+      // 返回所有概率
+      const probabilities: number[] = [];
+      const count = Math.min(COMPOSITION_LABELS.length, outputData.length);
+      console.info(`[CompositionClassifier] 返回概率数量: ${count}`);
+      for (let i = 0; i < count; i++) {
+        probabilities.push(outputData[i]);
+      }
+      
+      return probabilities;
+    } catch (error) {
+      console.error(`[CompositionClassifier] 获取概率异常: ${error}`);
+      return [];
     }
   }
 
